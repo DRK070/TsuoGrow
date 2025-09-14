@@ -1,0 +1,703 @@
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local GE = RS:WaitForChild("GameEvents")
+local Http = game:GetService("HttpService")
+local plr = Players.LocalPlayer
+local TeleportService = game:GetService("TeleportService")
+
+local function safe(fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok then warn(err) end
+    return ok
+end
+
+local function rememberUnlockage()
+    safe(function()
+        GE.SaveSlotService.RememberUnlockage:FireServer()
+    end)
+end
+
+local SETTINGS_FILE = "TsuoHub_GrowAGarden_Settings.json"
+local Settings = {
+    autoEgg = false,
+    autoSeed = false,
+    autoGear = false,
+    autoSellPlants = false,
+    autoDeliverPlant = false,
+    autoClaimReward = false,
+    autoClaimRecipe = false,
+    autoCollectPlants = false,
+    spamJoin = false,
+    selectedEggs = {},
+    selectedSeeds = {},
+    selectedGears = {},
+}
+
+local function loadSettings()
+    local ok, data = pcall(readfile, SETTINGS_FILE)
+    if ok and data and #data > 0 then
+        local ok2, decoded = pcall(Http.JSONDecode, Http, data)
+        if ok2 and type(decoded) == "table" then
+            for k, v in pairs(decoded) do
+                if Settings[k] ~= nil then
+                    if type(Settings[k]) == "table" and type(v) == "table" then
+                        Settings[k] = v
+                    elseif type(v) == type(Settings[k]) then
+                        Settings[k] = v
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function saveSettings()
+    pcall(function()
+        writefile(SETTINGS_FILE, Http:JSONEncode(Settings))
+    end)
+end
+
+loadSettings()
+
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local Window = Fluent:CreateWindow({
+    Title = "Tsuo Hub Grow a Garden",
+    SubTitle = "Discord.gg/Tsuo By DRKscripts",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(500, 350),
+    Acrylic = true,
+    Theme = "Amethyst",
+    MinimizeKey = Enum.KeyCode.End
+})
+
+local t  = Window:AddTab({ Title = "Farm",     Icon = "home" })
+local i  = Window:AddTab({ Title = "Teleport", Icon = "activity" })
+local sv = Window:AddTab({ Title = "Shop",     Icon = "shopping-cart" })
+local st = Window:AddTab({ Title = "Settings", Icon = "settings" })
+local c  = Window:AddTab({ Title = "Event",    Icon = "calendar" })
+
+local SELL_ALL_CF = CFrame.new(86.5901794, 2.99999976, 0.426814854, -0.00378605374, 9.70140164e-08, -0.999992847, -5.41318292e-12, 1, 9.70147269e-08, 0.999992847, 3.72716108e-10, -0.00378605374)
+local teleportLocations = {
+    ["Semente"] = CFrame.new(86.5902023, 2.99999976, -27.0039558),
+    ["Vender"]  = SELL_ALL_CF,
+    ["Gear"]    = CFrame.new(-285.408173, 2.99999976, -13.9779062),
+    ["Eggs"]    = CFrame.new(-286.218292, 2.99999976, -1.89541459),
+    ["Evento"]  = CFrame.new(-86.4794846, 4.99999952, -21.5512257, -0.995936215, -2.31221549e-08, 0.0900614262, -2.98631377e-08, 1, -7.35012193e-08, -0.0900614262, -7.58920393e-08, -0.995936215),
+}
+
+local function teleportTo(cf)
+    local char = plr.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = cf
+        return true
+    end
+    warn("Erro: Personagem ou HumanoidRootPart não encontrado")
+    return false
+end
+
+local eggs  = {"Common Egg","Uncommon Egg","Rare Egg","Legendary Egg","Mythical Egg","Bug Egg","Common Summer Egg","Rare Summer Egg","Paradise Egg","Anti Bee Egg","Bee Egg"}
+local seeds = {"Carrot","Strawberry","Blueberry","Rose","Orange Tulip","Tomato","Daffodil","Foxglove","Raspberry","Corn","Watermelon","Pumpkin","Avocado","Green Apple","Apple","Banana","Lilac","Bamboo","Coconut","Dragon Fruit","Cactus","Pink Lily","Grape","Pepper","Mushroom","Cacao","Sunflower","Beanstalk","Ember Lily","Sugar Apple","Burning Bud","Elder Strawberry","Giant Pinnecone","Romanesco"}
+local gears = {"Watering Can","Trowel","Trading Ticket","Recall Wrench","Basic Sprinkler","Firework","Advanced Sprinkler","Medium Treat","Medium Toy","Star Caller","Night Staff","Godly Sprinkler","Chocolate Sprinkler","Magnifying Glass","Nectar Staff","Pollen Radar","Master Sprinkler","Cleaning Spray","Favorrite Tool","Harvest Tool","Friendship pot","Honey Sprinkler","Level UP Lollipop","Grandmaster Sprinkler"}
+
+local function toArray(sel)
+    local out = {}
+    if type(sel) ~= "table" then
+        if type(sel) == "string" and sel ~= "" then table.insert(out, sel) end
+        return out
+    end
+    if #sel > 0 then
+        for _, v in ipairs(sel) do if v and v ~= "" then table.insert(out, v) end end
+    else
+        for k, v in pairs(sel) do if v then table.insert(out, k) end end
+    end
+    return out
+end
+
+sv:AddDropdown("EggDropdown", {
+    Title = "Select Egg(s)", Values = eggs, Multi = true, Default = Settings.selectedEggs,
+    Callback = function(values)
+        Settings.selectedEggs = values
+        saveSettings()
+    end
+})
+sv:AddToggle("AutoEggToggle", {
+    Title = "Auto Buy Egg",
+    Default = Settings.autoEgg,
+    Callback = function(v) Settings.autoEgg = v; saveSettings() end
+})
+
+sv:AddDropdown("SeedDropdown", {
+    Title = "Select Seed(s)", Values = seeds, Multi = true, Default = Settings.selectedSeeds,
+    Callback = function(values)
+        Settings.selectedSeeds = values
+        saveSettings()
+    end
+})
+sv:AddToggle("AutoSeedToggle", {
+    Title = "Auto Buy Seed",
+    Default = Settings.autoSeed,
+    Callback = function(v) Settings.autoSeed = v; saveSettings() end
+})
+
+sv:AddDropdown("GearDropdown", {
+    Title = "Select Gear(s)", Values = gears, Multi = true, Default = Settings.selectedGears,
+    Callback = function(values)
+        Settings.selectedGears = values
+        saveSettings()
+    end
+})
+sv:AddToggle("AutoGearToggle", {
+    Title = "Auto Buy Gear",
+    Default = Settings.autoGear,
+    Callback = function(v) Settings.autoGear = v; saveSettings() end
+})
+
+task.spawn(function()
+    while task.wait(0.4) do
+        if Settings.autoEgg then
+            for _, item in ipairs(toArray(Settings.selectedEggs)) do
+                safe(function() GE.BuyPetEgg:FireServer(item) end)
+                rememberUnlockage()
+                task.wait(0.1)
+            end
+        end
+        if Settings.autoSeed then
+            for _, item in ipairs(toArray(Settings.selectedSeeds)) do
+                safe(function() GE.BuySeedStock:FireServer(item) end)
+                rememberUnlockage()
+                task.wait(0.1)
+            end
+        end
+        if Settings.autoGear then
+            for _, item in ipairs(toArray(Settings.selectedGears)) do
+                safe(function() GE.BuyGearStock:FireServer(item) end)
+                rememberUnlockage()
+                task.wait(0.1)
+            end
+        end
+    end
+end)
+
+t:AddToggle("AutoSellPlantsToggle", {
+    Title = "Sell All Plants",
+    Default = Settings.autoSellPlants,
+    Callback = function(v) Settings.autoSellPlants = v; saveSettings() end
+})
+
+local function GetPlayerFarm()
+    for _, farm in pairs(workspace.Farm:GetChildren()) do
+        local data = farm:FindFirstChild("Important") and farm.Important:FindFirstChild("Data")
+        if data and data:FindFirstChild("Owner") then
+            if data.Owner.Value == plr.Name then
+                return farm
+            end
+        end
+    end
+    return nil
+end
+
+local function collectPlant(plant)
+    local args = { [1] = { [1] = plant } }
+    GE.Crops.Collect:FireServer(unpack(args))
+end
+
+local autoCollect = false
+local collectingThread = nil
+
+t:AddToggle("AutoCollectPlantsToggle", {
+    Title = "Auto Collect Plants",
+    Default = Settings.autoCollectPlants,
+    Callback = function(value)
+        autoCollect = value
+        Settings.autoCollectPlants = value
+        saveSettings()
+        if value then
+            if collectingThread then return end
+            collectingThread = task.spawn(function()
+                while autoCollect do
+                    local farm = GetPlayerFarm()
+                    if farm then
+                        local plantsFolder = farm.Important:FindFirstChild("Plants_Physical")
+                        if plantsFolder then
+                            for _, crop in pairs(plantsFolder:GetChildren()) do
+                                if not autoCollect then break end
+                                if crop:FindFirstChild("Fruits") then
+                                    for _, fruit in pairs(crop.Fruits:GetChildren()) do
+                                        if not autoCollect then break end
+                                        collectPlant(fruit)
+                                        task.wait(0.15)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    task.wait(1)
+                end
+                collectingThread = nil
+            end)
+        end
+    end
+})
+
+task.spawn(function()
+    while task.wait(1.5) do
+        if not Settings.autoSellPlants then continue end
+        local ok = teleportTo(SELL_ALL_CF)
+        if ok then
+            task.wait(0.3)
+            safe(function()
+                GE.Sell_Inventory:FireServer()
+            end)
+            rememberUnlockage()
+        end
+    end
+end)
+
+i:AddDropdown("TeleportDropdown", {
+    Title = "Teleport",
+    Values = {"Semente", "Vender", "Gear", "Eggs", "Evento"},
+    Multi = false,
+    Default = 1,
+    Callback = function(loc) teleportTo(teleportLocations[loc]) end
+})
+
+st:AddButton({ Title = "Copy Discord", Callback = function() setclipboard("https://discord.gg/Tsuo") end })
+
+local se = st:AddSection("Job Id:")
+local currentJobId = ""
+
+local jobInput = se:AddInput("JobInput", {
+    Title = "JobId",
+    Default = "",
+    Placeholder = "input id",
+    Numeric = false,
+    Finished = false,
+    Callback = function(text)
+        currentJobId = text
+        print("JobId:", currentJobId)
+    end
+})
+
+se:AddButton({
+    Title = "Teleport",
+    Description = "",
+    Callback = function()
+        if currentJobId ~= "" then
+            safe(function()
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, currentJobId, plr)
+            end)
+        else
+            warn("JobId está vazio!")
+        end
+    end
+})
+
+se:AddButton({
+    Title = "Clear Job Id",
+    Description = "",
+    Callback = function()
+        currentJobId = ""
+        jobInput:SetValue("")
+    end
+})
+
+se:AddToggle("SpamJoinToggle", {
+    Title = "Spam Join",
+    Default = false,
+    Callback = function(state)
+        task.spawn(function()
+            while state and currentJobId ~= "" do
+                safe(function()
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, currentJobId, plr)
+                end)
+                task.wait(5)
+            end
+        end)
+    end
+})
+
+local autoPlanting = false
+t:AddToggle("ToggleAutoPlant", {
+    Title = "Auto Plant All Seeds",
+    Default = false,
+    Callback = function(state)
+        autoPlanting = state
+    end
+})
+
+local MyFarm
+for _, farm in pairs(workspace.Farm:GetChildren()) do
+    if farm.Name == "Farm" and farm:FindFirstChild("Important") and farm.Important:FindFirstChild("Data") then
+        local owner = farm.Important.Data:FindFirstChild("Owner")
+        if owner and (owner.Value == plr or owner.Value == plr.Name or (owner.Value.Name and owner.Value.Name == plr.Name)) then
+            MyFarm = farm
+            break
+        end
+    end
+end
+
+local function randompt(part)
+    local size = part.Size
+    local offset = Vector3.new(
+        (math.random() - 0.5) * size.X,
+        (math.random() - 0.5) * size.Y,
+        (math.random() - 0.5) * size.Z
+    )
+    local worldPos = part.CFrame:PointToWorldSpace(offset)
+    local rotation = CFrame.Angles(
+        math.rad(math.random(0, 360)),
+        math.rad(math.random(0, 360)),
+        math.rad(math.random(0, 360))
+    )
+    return CFrame.new(worldPos) * rotation
+end
+
+local function cleanSeedName(name)
+    local clean = name:gsub("%[.-%]", "")
+    clean = clean:gsub("Seed", "")
+    clean = clean:gsub("^%s+", "")
+    clean = clean:gsub("%s+$", "")
+    return clean
+end
+
+local function isValidSeedName(name)
+    local hasCount = string.match(name, "%[X%d+%]")
+    local hasKG = string.find(name, "KG") ~= nil
+    return hasCount and not hasKG
+end
+
+local function getAllValidSeeds()
+    local backpack = plr.Backpack
+    local char = plr.Character
+    local seedsList = {}
+    for _, item in pairs(backpack:GetChildren()) do
+        if item:IsA("Tool") and isValidSeedName(item.Name) then
+            table.insert(seedsList, item)
+        end
+    end
+    for _, item in pairs(char:GetChildren()) do
+        if item:IsA("Tool") and isValidSeedName(item.Name) then
+            table.insert(seedsList, item)
+        end
+    end
+    return seedsList
+end
+
+local function plant(seedTool)
+    if not seedTool or not MyFarm then return end
+    local plantLocations = MyFarm.Important:FindFirstChild("Plant_Locations")
+    if not plantLocations then return end
+    local parts = plantLocations:GetChildren()
+    if #parts == 0 then return end
+    local targetPart = parts[math.random(1, #parts)]
+    local cf = randompt(targetPart)
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    hrp.CFrame = cf * CFrame.new(0, 10, 0)
+    local fruitName = cleanSeedName(seedTool.Name)
+    GE.Plant_RE:FireServer(Vector3.new(cf.X, cf.Y, cf.Z), fruitName)
+end
+
+task.spawn(function()
+    while true do
+        if autoPlanting and MyFarm then
+            local seedsList = getAllValidSeeds()
+            for _, seedTool in pairs(seedsList) do
+                if plr.Backpack:FindFirstChild(seedTool.Name) then
+                    plr.Character.Humanoid:EquipTool(seedTool)
+                    task.wait(0.1)
+                end
+                local equipped = plr.Character:FindFirstChild(seedTool.Name)
+                if equipped then
+                    plant(equipped)
+                    task.wait(0.3)
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+c:AddToggle("GiveAllPlantsToggle", {
+    Title = "Give All Plants",
+    Default = false,
+    Callback = function(state)
+        task.spawn(function()
+            while state do
+                safe(function()
+                    GE.FallMarketEvent.SubmitAllPlants:FireServer()
+                end)
+                task.wait(1)
+            end
+        end)
+    end
+})
+
+local petItems = {"Fall Egg","Chipmunk","Red Squirrel","Marmot","Sugar Glider","Space Squirrel"}
+local seedItems = {"Turnip","Parsley","Meyer Lemon","Carnival Pumpkin","Kniphofia","Golden Peach","Maple Resin"}
+local gearItems = {"Firefly Jar","Sky Lantern","Maple Leaf Kite","Leaf Blower","Maple Syrup","Maple Leaf Charm","Maple Sprinkler","Bonfire","Harvest Basket","Golden Acorn"}
+local cosmeticItems = {"Fall Crate","Fall Leaf Chair","Maple Flag","Flying Kite","Fall Fountain"}
+
+local function addEventShop(tab, name, items)
+    tab:AddDropdown(name.."Dropdown", {
+        Title = name.." Shop",
+        Values = items,
+        Multi = true,
+        Default = {},
+        Callback = function(values)
+            _G[name.."Selected"] = values
+        end
+    })
+    tab:AddToggle(name.."Toggle", {
+        Title = "Auto Buy "..name.." Shop",
+        Default = false,
+        Callback = function(state)
+            task.spawn(function()
+                while state do
+                    local selected = _G[name.."Selected"] or {}
+                    for _, item in ipairs(selected) do
+                        local args = {[1]=item,[2]=1}
+                        if name == "Pet" then args[2]=3 end
+                        if name == "Cosmetic" then args[2]=4 end
+                        if name == "Seed" then args[2]=1 end
+                        safe(function()
+                            GE.BuyEventShopStock:FireServer(unpack(args))
+                        end)
+                        task.wait(0.3)
+                    end
+                    task.wait(1)
+                end
+            end)
+        end
+    })
+end
+
+addEventShop(c,"Pet",petItems)
+addEventShop(c,"Seed",seedItems)
+addEventShop(c,"Gear",gearItems)
+addEventShop(c,"Cosmetic",cosmeticItems)
+
+c:AddToggle("GiveAllPlantsToggle", {
+    Title = "Give All Plants",
+    Default = false,
+    Callback = function(value)
+        _G.GiveAllPlants = value
+        task.spawn(function()
+            while _G.GiveAllPlants do
+                safe(function()
+                    game:GetService("ReplicatedStorage").GameEvents.FallMarketEvent.SubmitAllPlants:FireServer()
+                end)
+                task.wait(1)
+            end
+        end)
+    end
+})
+
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ToggleButtonGui"
+screenGui.Parent = game:GetService("CoreGui")
+screenGui.ResetOnSpawn = false
+
+local button = Instance.new("ImageButton")
+button.Size = UDim2.new(0, 50, 0, 50)
+button.Position = UDim2.new(0, 10, 0, 10)
+button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+button.BackgroundTransparency = 0.2
+button.AutoButtonColor = true
+button.Image = "rbxassetid://122375768646273"
+button.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0.5, 0)
+corner.Parent = button
+
+local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+button.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = button.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+button.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+button.MouseButton1Click:Connect(function()
+    local vm = game:GetService("VirtualInputManager")
+    vm:SendKeyEvent(true, Enum.KeyCode.End, false, game)
+    vm:SendKeyEvent(false, Enum.KeyCode.End, false, game)
+    local grow   = TweenService:Create(button, TweenInfo.new(0.15), {Size = UDim2.new(0, 60, 0, 60)})
+    local shrink = TweenService:Create(button, TweenInfo.new(0.15), {Size = UDim2.new(0, 50, 0, 50)})
+    grow:Play(); grow.Completed:Connect(function() shrink:Play() end)
+end)
+
+local MyFarm
+for _, farm in pairs(workspace.Farm:GetChildren()) do
+    if farm.Name == "Farm" and farm:FindFirstChild("Important") and farm.Important:FindFirstChild("Data") then
+        local owner = farm.Important.Data:FindFirstChild("Owner")
+        if owner and (owner.Value == game.Players.LocalPlayer or owner.Value == game.Players.LocalPlayer.Name or (owner.Value.Name and owner.Value.Name == game.Players.LocalPlayer.Name)) then
+            MyFarm = farm
+            break
+        end
+    end
+end
+
+local function randompt(part)
+    local size = part.Size
+    local offset = Vector3.new(
+        (math.random() - 0.5) * size.X,
+        (math.random() - 0.5) * size.Y,
+        (math.random() - 0.5) * size.Z
+    )
+    local worldPos = part.CFrame:PointToWorldSpace(offset)
+    local rotation = CFrame.Angles(
+        math.rad(math.random(0, 360)),
+        math.rad(math.random(0, 360)),
+        math.rad(math.random(0, 360))
+    )
+    return CFrame.new(worldPos) * rotation
+end
+
+local function cleanSeedName(name)
+    local clean = name:gsub("%[.-%]", "")
+    clean = clean:gsub("Seed", "")
+    clean = clean:gsub("^%s+", "")
+    clean = clean:gsub("%s+$", "")
+    return clean
+end
+
+local function isValidSeedName(name)
+    local hasCount = string.match(name, "%[X%d+%]")
+    local hasKG = string.find(name, "KG") ~= nil
+    return hasCount and not hasKG
+end
+
+local function getAllValidSeeds()
+    local backpack = game.Players.LocalPlayer.Backpack
+    local char = game.Players.LocalPlayer.Character
+    local seeds = {}
+
+    for _, item in pairs(backpack:GetChildren()) do
+        if item:IsA("Tool") and isValidSeedName(item.Name) then
+            table.insert(seeds, item)
+        end
+    end
+
+    for _, item in pairs(char:GetChildren()) do
+        if item:IsA("Tool") and isValidSeedName(item.Name) then
+            table.insert(seeds, item)
+        end
+    end
+
+    return seeds
+end
+
+local function plant(seedTool)
+    if not seedTool or not MyFarm then return end
+
+    local plantLocations = MyFarm.Important:FindFirstChild("Plant_Locations")
+    if not plantLocations then return end
+
+    local parts = plantLocations:GetChildren()
+    if #parts == 0 then return end
+
+    local targetPart = parts[math.random(1, #parts)]
+    local cf = randompt(targetPart)
+    local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    hrp.CFrame = cf * CFrame.new(0, 10, 0)
+
+    local fruitName = cleanSeedName(seedTool.Name)
+
+    game:GetService("ReplicatedStorage").GameEvents.Plant_RE:FireServer(
+        Vector3.new(cf.X, cf.Y, cf.Z),
+        fruitName
+    )
+end
+
+task.spawn(function()
+    while true do
+        if autoPlanting and MyFarm then
+            local seeds = getAllValidSeeds()
+            for _, seedTool in pairs(seeds) do
+                if game.Players.LocalPlayer.Backpack:FindFirstChild(seedTool.Name) then
+                    game.Players.LocalPlayer.Character.Humanoid:EquipTool(seedTool)
+                    task.wait(0.1)
+                end
+
+                local equipped = game.Players.LocalPlayer.Character:FindFirstChild(seedTool.Name)
+                if equipped then
+                    plant(equipped)
+                    task.wait(0.3)
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+-- Nome do jogo
+local nomeDoJogo
+local success, info = pcall(function()
+    return MarketplaceService:GetProductInfo(game.PlaceId)
+end)
+if success and info and info.Name then
+    nomeDoJogo = info.Name
+else
+    nomeDoJogo = "Jogo Desconhecido"
+end
+
+-- JobId do servidor
+local jobId = game.JobId or "Desconhecido"
+
+-- Número de players
+local totalPlayers = #Players:GetPlayers()
+local maxPlayers = 6 -- máximo real do jogo
+
+-- Hora atual
+local hora = os.date("%H:%M")
+
+-- Montando o embed
+local data = {
+    ["embeds"] = {{
+        ["title"] = "Tsuo Hub Server Info",
+        ["description"] = string.format(
+            "**Players:**\n```%d/%d```\n**Job-Id:**\n```%s```\n**Script de Teleporte:**\n```lua\ngame:GetService(\"ReplicatedStorage\").__ServerBrowser:InvokeServer(\"teleport\", \"%s\")\n```",
+            totalPlayers, maxPlayers, jobId, jobId
+        ),
+        ["color"] = 0x9B59B6,
+        ["footer"] = {
+            ["text"] = "TSUO HUB | Hoje às " .. hora
+        }
+    }}
+}
+
+local body = HttpService:JSONEncode(data)
+local headers = {["Content-Type"] = "application/json"}
+
+local request = http_request or request or HttpPost or (syn and syn.request)
+if request then
+    request({
+        Url = "https://discord.com/api/webhooks/1416268486392418429/aj_gjS5rGK9JZymhNY6pLu-9KrIV630u_HzBmzJPGMXlQkVXcfD_riFPLMfLs9r_Je_M",
+        Method = "POST",
+        Headers = headers,
+        Body = body
+    })
+end
